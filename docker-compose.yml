@@ -1,0 +1,37 @@
+version: '3.4'
+services:
+  localstack:
+    image: localstack/localstack:0.12.16
+    container_name: foo-app-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=sqs
+      - DEFAULT_REGION=ap-southeast-2
+      - AWS_ACCESS_KEY_ID=KEY_ID_123
+      - AWS_SECRET_ACCESS_KEY=SECRET_ACCESS_KEY_123
+      - AWS_DEFAULT_REGION=ap-southeast-2
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    healthcheck:
+      # Update `wc -l != <NUMBER_OF_QUEUES_CREATED>` statement when adding extra queues
+      test: if [ `aws sqs list-queues --endpoint-url http://localstack:4566|grep "http:"|wc -l` != 7 ]; then exit 1; else exit 0; fi
+  
+  setup-resources-localstack:
+    image: mesosphere/aws-cli
+    environment:
+      - AWS_ACCESS_KEY_ID=KEY_ID_123
+      - AWS_SECRET_ACCESS_KEY=SECRET_ACCESS_KEY_123
+      - AWS_DEFAULT_REGION=ap-southeast-2
+    volumes:
+      - "./wait-for-it.sh:/app/wait-for-it.sh"
+    entrypoint: ["/app/wait-for-it.sh", "localstack:4566", "--", "/bin/sh", "-c"]
+    command: >
+      "
+        # Executing SQS
+        aws sqs create-queue --endpoint-url http://localstack:4566 --queue-name invoice-generation-queue --attributes 'RedrivePolicy.maxReceiveCount=2'
+        aws sqs create-queue --endpoint-url http://localstack:4566 --queue-name settlement-event-queue --attributes 'RedrivePolicy.maxReceiveCount=2'
+      "
+    depends_on:
+      - localstack
+
